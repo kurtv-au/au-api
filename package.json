@@ -1,0 +1,22 @@
+{
+  "name": "au-api",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Answer United API",
+  "author": "kurtv@answerunited.com",
+  "license": "Private",
+  "scripts": {
+    "build": "node scripts/generate-build-timestamp.js && nitro build",
+    "dev": "nitro dev",
+    "generate-timestamp": "node scripts/generate-build-timestamp.js"
+  },
+  "devDependencies": {
+    "h3": "^1.15.4",
+    "nitropack": "^2.12.4",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "zod": "^4.1.5"
+  }
+}
