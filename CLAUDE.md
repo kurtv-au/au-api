@@ -105,7 +105,10 @@ export default eventHandler(async (event) => {
 ```
 
 ### Database Types
-Define your database models in `server/types/database.ts`. The DatabaseResponse<T> wrapper provides a consistent API response format.
+Database models are defined in `server/types/database.ts` using consistent camelCase naming:
+- All API responses use camelCase field names (e.g., `clientNumber`, `clientName`, `orderId`)
+- Database fields are automatically transformed from PascalCase to camelCase using the case mapping utility
+- The DatabaseResponse<T> wrapper provides a consistent API response format
 
 ### Health Check
 The `/api/health` endpoint verifies database connectivity and can be used for monitoring.
@@ -169,12 +172,14 @@ fetch('/api/users', {
 - Health and version endpoints remain unauthenticated for monitoring systems
 - Test environment can skip authentication via `NODE_ENV=test`
 
-## Public Endpoints (No Authentication)
+## API Endpoints
 
-### `/api/health`
+### Public Endpoints (No Authentication)
+
+#### `/api/health`
 Database connectivity and system health status.
 
-### `/api/version`
+#### `/api/version`
 Application version and build information:
 ```json
 {
@@ -187,3 +192,74 @@ Application version and build information:
   "nodeVersion": "v18.17.0",
   "environment": "development"
 }
+```
+
+### Authenticated Endpoints
+
+#### `/api/is/info` - Client Information Lookup
+Fetches client information from cltInfo table with optional HTML field processing.
+
+**Query Parameters** (XOR validation - exactly one required):
+- `clientNumber`: Exact match search by client number
+- `clientName`: Partial match search by client name
+
+**Optional Parameters**:
+- `processFields=true`: Enable HTML field processing with placeholder replacement
+
+**Response Format**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "infoId": 123,
+      "stamp": "2024-09-03T12:00:00Z",
+      "cltId": 456,
+      "orderId": 1,
+      "index": "Main Office", 
+      "info": "<p>Office information</p>",
+      "clientNumber": 12345,
+      "clientName": "Answer United",
+      "processedInfo": "<p>Processed content</p>", // Only when processFields=true
+      "fieldProcessing": {                         // Only when processFields=true
+        "totalFields": 1,
+        "replacedFields": 1,
+        "missingFields": []
+      }
+    }
+  ],
+  "count": 1
+}
+```
+
+**Usage Examples**:
+```bash
+# Search by client number
+curl -H "X-API-Key: your-key" "http://localhost:3000/api/is/info?clientNumber=12345"
+
+# Search by client name with field processing
+curl -H "X-API-Key: your-key" "http://localhost:3000/api/is/info?clientName=Answer&processFields=true"
+```
+
+## Utility Functions
+
+### Case Mapping (`server/utils/caseMapper.ts`)
+Transforms database PascalCase fields to consistent camelCase for API responses:
+- **transformObjectKeys()**: Transform single object keys
+- **transformRecordset()**: Transform array of database records
+- Handles nested objects and preserves Date objects
+- Maps specific database fields (e.g., `ClientNumber` → `clientNumber`)
+
+### HTML Field Processing (`server/utils/htmlFieldParser.ts`)
+Parses and processes HTML content with field replacement:
+- **extractFields()**: Extract `amtelco_nxt_field` attributes and `[field]` placeholders
+- **replaceFields()**: Replace placeholders with database values
+- **getFieldIds()**: Get unique field IDs for database lookup
+- Includes XSS protection through HTML encoding
+
+### Field Resolution (`server/utils/fieldResolver.ts`)
+Resolves field values from database with performance optimization:
+- **resolveClientFields()**: Process single client record
+- **resolveMultipleClientFields()**: Process multiple client records
+- **batchGetFieldValues()**: Batch database queries for performance
+- Trims all field values and handles missing fields gracefully
