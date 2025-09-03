@@ -11,11 +11,16 @@ BASE_URL="http://localhost:3000"
 
 function test_by_number() {
   local client_number=$1
-  echo "Testing by Client Number: $client_number"
+  local process_fields=${2:-false}
+  echo "Testing by Client Number: $client_number (processFields=$process_fields)"
   echo "------------------------------"
   
-  curl -X GET \
-    "${BASE_URL}/api/is/info?clientNumber=${client_number}" \
+  local url="${BASE_URL}/api/is/info?clientNumber=${client_number}"
+  if [ "$process_fields" = "true" ]; then
+    url="${url}&processFields=true"
+  fi
+  
+  curl -X GET "$url" \
     -H "X-API-Key: ${API_KEY}" \
     -H "Content-Type: application/json" \
     -s | python3 -m json.tool 2>/dev/null || echo "Error: Failed to get response"
@@ -25,14 +30,19 @@ function test_by_number() {
 
 function test_by_name() {
   local client_name=$1
-  echo "Testing by Client Name (partial): '$client_name'"
+  local process_fields=${2:-false}
+  echo "Testing by Client Name (partial): '$client_name' (processFields=$process_fields)"
   echo "------------------------------"
   
   # URL encode the client name
   local encoded_name=$(echo -n "$client_name" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read()))")
   
-  curl -X GET \
-    "${BASE_URL}/api/is/info?clientName=${encoded_name}" \
+  local url="${BASE_URL}/api/is/info?clientName=${encoded_name}"
+  if [ "$process_fields" = "true" ]; then
+    url="${url}&processFields=true"
+  fi
+  
+  curl -X GET "$url" \
     -H "X-API-Key: ${API_KEY}" \
     -H "Content-Type: application/json" \
     -s | python3 -m json.tool 2>/dev/null || echo "Error: Failed to get response"
@@ -78,9 +88,16 @@ case "$1" in
     echo "=============================="
     echo ""
     
+    echo "=== Basic Functionality Tests ==="
     test_by_number "12345"
     test_by_name "Test"
     test_by_name "Answer"
+    
+    echo "=== Field Processing Tests ==="
+    test_by_number "12345" "true"
+    test_by_name "Test" "true"
+    
+    echo "=== Validation Tests ==="
     test_xor_validation
     
     echo "=============================="
