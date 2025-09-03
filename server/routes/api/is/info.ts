@@ -1,7 +1,9 @@
 import { eventHandler, getQuery, createError } from 'h3'
 import { z } from 'zod'
 import { query } from '../../../utils/database'
-import type { ClientInfoWithDetails, DatabaseResponse } from '../../../types/database'
+import { resolveMultipleClientFields } from '../../../utils/fieldResolver'
+import { transformRecordset } from '../../../utils/caseMapper'
+import type { ClientInfoWithDetails, ProcessedClientInfo, DatabaseResponse, FieldProcessingResult } from '../../../types/database'
 
 /**
  * Query parameters schema with XOR validation
@@ -9,9 +11,10 @@ import type { ClientInfoWithDetails, DatabaseResponse } from '../../../types/dat
  */
 const querySchema = z.object({
   clientNumber: z.string().optional(),
-  clientName: z.string().optional()
+  clientName: z.string().optional(),
+  processFields: z.string().optional().transform(val => val === 'true')
 }).refine((data) => {
-  // XOR: exactly one must be provided
+  // XOR: exactly one must be provided (clientNumber OR clientName)
   return (!!data.clientNumber) !== (!!data.clientName)
 }, {
   message: 'Either clientNumber or clientName must be provided (not both)'
@@ -44,7 +47,7 @@ export default eventHandler(async (event) => {
       })
     }
 
-    const { clientNumber, clientName } = validation.data
+    const { clientNumber, clientName, processFields } = validation.data
     let result
 
     if (clientNumber) {
@@ -79,11 +82,48 @@ export default eventHandler(async (event) => {
       })
     }
 
-    // Return successful response
-    const response: DatabaseResponse<ClientInfoWithDetails[]> = {
+    // Transform database results to camelCase for API consistency
+    let responseData = transformRecordset<ClientInfoWithDetails>(result!.recordset)
+
+    // Process fields if requested
+    if (processFields && responseData.length > 0) {
+      try {
+        const processedResults = await resolveMultipleClientFields(responseData)
+        
+        // Transform results to include processedInfo (note: camelCase)
+        responseData = processedResults.map((item, index) => ({
+          ...responseData[index],
+          processedInfo: item.processedInfo,
+          fieldProcessing: item.fieldProcessing
+        })) as ProcessedClientInfo[]
+        
+      } catch (fieldError: any) {
+        console.error('Field processing error:', fieldError)
+        // Continue without field processing if it fails
+        console.warn('Continuing without field processing due to error')
+      }
+    }
+
+    // Prepare response with field processing metadata if applicable
+    const response: DatabaseResponse<ClientInfoWithDetails[] | ProcessedClientInfo[]> = {
       success: true,
-      data: result!.recordset,
-      count: result!.recordset.length
+      data: responseData,
+      count: responseData.length
+    }
+
+    // Add field processing summary if fields were processed
+    if (processFields && responseData.length > 0) {
+      const processedData = responseData as ProcessedClientInfo[]
+      const totalFields = processedData.reduce((sum, item) => sum + (item.fieldProcessing?.totalFields || 0), 0)
+      const replacedFields = processedData.reduce((sum, item) => sum + (item.fieldProcessing?.replacedFields || 0), 0)
+      const allMissingFields = processedData.flatMap(item => item.fieldProcessing?.missingFields || [])
+      
+      ;(response as any).fieldSummary = {
+        totalFields,
+        replacedFields,
+        missingFields: [...new Set(allMissingFields)], // Remove duplicates
+        processedRecords: processedData.filter(item => item.fieldProcessing?.totalFields || 0 > 0).length
+      }
     }
 
     return response
