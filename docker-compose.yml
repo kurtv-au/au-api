@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  au-api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Database configuration - override with your values
+      - DB_SERVER=${DB_SERVER:-localhost}
+      - DB_PORT=${DB_PORT:-1433}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_ENCRYPT=${DB_ENCRYPT:-false}
+      # API authentication
+      - API_KEY=${API_KEY}
+    restart: unless-stopped
+    depends_on:
+      - sqlserver
+    networks:
+      - au-network
+
+  # Optional SQL Server container for development
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=${SA_PASSWORD:-YourStrong@Passw0rd}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - au-network
+
+volumes:
+  sqlserver_data:
+
+networks:
+  au-network:
+    driver: bridge
