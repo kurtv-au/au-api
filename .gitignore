@@ -6,6 +6,7 @@ dist
 .output
 .env
 .env.local
+.env.docker.local
 
 .DS_Store
 .build-timestamp
