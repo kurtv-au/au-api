@@ -62,6 +62,15 @@ export interface Client {
   clientName: string
 }
 
+// Client List type for IS clients endpoint (camelCase for API consistency)
+export interface ClientListItem {
+  cltId: number
+  stamp: Date
+  clientNumber: number
+  clientName: string
+  billingCode: string
+}
+
 export interface ClientInfoWithDetails extends ClientInfo {
   clientNumber: number
   clientName: string
