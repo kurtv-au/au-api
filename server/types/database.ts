@@ -22,12 +22,22 @@ export interface Product {
   updated_at: Date
 }
 
+// Pagination info for list responses
+export interface PaginationInfo {
+  limit: number
+  offset: number
+  total?: number
+  hasMore: boolean
+  note?: string
+}
+
 // Generic database response wrapper
 export interface DatabaseResponse<T> {
   success: boolean
   data?: T
   error?: string
   count?: number
+  pagination?: PaginationInfo
 }
 
 // Pagination parameters
@@ -111,4 +121,48 @@ export interface FieldProcessingResult {
   totalFields: number
   replacedFields: number
   missingFields: string[]
+}
+
+// Call Item types (camelCase for API consistency)
+export interface CallItem {
+  recId: number
+  callNumber: string | null
+  callId: number | null
+  callTime: Date | null
+  callDuration: number | null
+  stationNumber: string | null
+  agentOld: string | null
+  agentInitials: string | null
+  callerId: string | null
+  clientName: string | null
+  callerName: string | null
+  billingNumber: string | null
+  clientNumber: string | null
+  callProgress: string | null
+  archived: boolean | null
+  drive: string | null
+  combinedDuration: number | null
+  emailed: boolean | null
+  endingClientNumber: string | null
+  qaScore: number | null
+  location: string | null
+  endingClientName: string | null
+  endingBillingNumber: string | null
+  finalClientNumber: string | null
+  finalClientName: string | null
+  finalBillingNumber: string | null
+  endTime: Date | null
+  agent: string | null
+}
+
+// Pagination response for call lists
+export interface CallListResponse {
+  success: boolean
+  data: CallItem[]
+  count: number
+  pagination?: {
+    limit: number
+    offset: number
+    total: number
+  }
 }

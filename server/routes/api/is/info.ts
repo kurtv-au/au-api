@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { DatabaseManager } from '~/utils/databases'
 import { resolveMultipleClientFields } from '~/utils/fieldResolver'
 import { transformRecordset } from '~/utils/caseMapper'
-import type { ClientInfoWithDetails, ProcessedClientInfo, DatabaseResponse, FieldProcessingResult } from '~/types/database'
+import type { ClientInfoWithDetails, ProcessedClientInfo, DatabaseResponse } from '~/types/database'
 
 // Initialize database manager
 DatabaseManager.loadFromEnvironment()

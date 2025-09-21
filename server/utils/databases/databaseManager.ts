@@ -241,6 +241,26 @@ export class DatabaseManager {
       })
     }
 
+    // Logger Database (MSSQL) - Uses same server as intelligent with different database
+    if (process.env.DB_LOGGER_DATABASE) {
+      manager.register({
+        name: 'logger',
+        type: DatabaseType.MSSQL,
+        server: process.env.DB_LOGGER_SERVER || process.env.DB_SERVER || 'localhost',
+        port: parseInt(process.env.DB_LOGGER_PORT || process.env.DB_PORT || '1433'),
+        database: process.env.DB_LOGGER_DATABASE,
+        user: process.env.DB_LOGGER_USER || process.env.DB_USER || '',
+        password: process.env.DB_LOGGER_PASSWORD || process.env.DB_PASSWORD || '',
+        encrypt: process.env.DB_LOGGER_ENCRYPT === 'true' || process.env.DB_ENCRYPT === 'true',
+        trustServerCertificate: process.env.NODE_ENV === 'development',
+        enabled: process.env.DB_LOGGER_ENABLED !== 'false',
+        poolConfig: {
+          min: 1,
+          max: 5
+        }
+      })
+    }
+
     // Unity Logger Database (MSSQL)
     if (process.env.DB_UNITY_LOGGER_DATABASE) {
       manager.register({
