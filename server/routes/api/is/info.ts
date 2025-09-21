@@ -1,9 +1,13 @@
 import { eventHandler, getQuery, createError } from 'h3'
 import { z } from 'zod'
-import { query } from '../../../utils/database'
-import { resolveMultipleClientFields } from '../../../utils/fieldResolver'
-import { transformRecordset } from '../../../utils/caseMapper'
-import type { ClientInfoWithDetails, ProcessedClientInfo, DatabaseResponse, FieldProcessingResult } from '../../../types/database'
+import { DatabaseManager } from '~/utils/databases'
+import { resolveMultipleClientFields } from '~/utils/fieldResolver'
+import { transformRecordset } from '~/utils/caseMapper'
+import type { ClientInfoWithDetails, ProcessedClientInfo, DatabaseResponse, FieldProcessingResult } from '~/types/database'
+
+// Initialize database manager
+DatabaseManager.loadFromEnvironment()
+const db = DatabaseManager.getInstance()
 
 /**
  * Query parameters schema with XOR validation
@@ -48,6 +52,9 @@ export default eventHandler(async (event) => {
     }
 
     const { clientNumber, clientName, processFields } = validation.data
+
+    // Get the default database connection (maps to existing database)
+    const intelligentDb = await db.get('default')
     let result
 
     if (clientNumber) {
@@ -60,7 +67,7 @@ export default eventHandler(async (event) => {
         })
       }
 
-      result = await query<ClientInfoWithDetails>(`
+      result = await intelligentDb.query<ClientInfoWithDetails>(`
         SELECT ci.*, cc.ClientName, cc.ClientNumber
         FROM dbo.cltInfo ci
         INNER JOIN dbo.cltClients cc ON ci.cltId = cc.cltId
@@ -71,7 +78,7 @@ export default eventHandler(async (event) => {
       })
     } else if (clientName) {
       // Search by ClientName (partial match using LIKE)
-      result = await query<ClientInfoWithDetails>(`
+      result = await intelligentDb.query<ClientInfoWithDetails>(`
         SELECT ci.*, cc.ClientName, cc.ClientNumber
         FROM dbo.cltInfo ci
         INNER JOIN dbo.cltClients cc ON ci.cltId = cc.cltId
@@ -83,7 +90,7 @@ export default eventHandler(async (event) => {
     }
 
     // Transform database results to camelCase for API consistency
-    let responseData = transformRecordset<ClientInfoWithDetails>(result!.recordset)
+    let responseData = transformRecordset<ClientInfoWithDetails>(result!.rows)
 
     // Process fields if requested
     if (processFields && responseData.length > 0) {

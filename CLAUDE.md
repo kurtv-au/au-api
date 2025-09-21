@@ -67,41 +67,181 @@ When building APIs:
 
 ## Database Integration
 
+### Multi-Database Architecture
+This API features a comprehensive multi-database architecture supporting multiple database types and connections:
+
+**Supported Database Systems:**
+- **MSSQL**: Multiple SQL Server databases on same or different servers
+- **MySQL**: Full MySQL support with connection pooling
+- **PostgreSQL**: Complete PostgreSQL implementation
+
+**Named Database Connections:**
+- `intelligent` (MSSQL) - Main system database
+- `unity-logger` (MSSQL) - Logging and event tracking
+- `mdr` (MSSQL) - MDR system (future)
+- `absentee` (MySQL) - Absentee management
+- `engage` (PostgreSQL) - Engagement system (future)
+- `default` (MSSQL) - Legacy backward compatibility
+- `mysql` (MySQL) - Legacy backward compatibility
+
 ### Configuration
-Set up database connection via environment variables:
+Set up database connections via environment variables:
 ```bash
 cp .env.example .env
-# Edit .env with your SQL Server credentials
+# Edit .env with your database credentials
+
+# SQL Server Configuration
+DB_SERVER=localhost
+DB_PORT=1433
+DB_DATABASE=your_database_name
+DB_USER=your_username
+DB_PASSWORD=your_password
+
+# MySQL Configuration
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_DATABASE=your_mysql_database
+MYSQL_USER=your_mysql_username
+MYSQL_PASSWORD=your_mysql_password
 ```
 
-### Database Utilities (`server/utils/database.ts`)
+### SQL Server Utilities (`server/utils/database.ts`)
 - **getPool()**: Returns singleton connection pool
-- **query()**: Execute parameterized SQL queries
+- **query()**: Execute parameterized SQL queries with named parameters
 - **execute()**: Execute stored procedures
 - **closePool()**: Clean up connections
 
+### MySQL Utilities (`server/utils/mysqlDatabase.ts`)
+- **getMySQLPool()**: Returns singleton MySQL connection pool
+- **mysqlQuery()**: Execute MySQL queries with positional parameters
+- **mysqlQueryNamed()**: Execute MySQL queries with named parameters
+- **mysqlExecute()**: Execute MySQL stored procedures
+- **getMySQLConnection()**: Get connection for transactions
+- **closeMySQLPool()**: Clean up MySQL connections
+- **testMySQLConnection()**: Verify MySQL connectivity
+
+### Database Manager Usage
+
+#### Getting Database Connections
+```typescript
+import { db } from '~/utils/databases'
+
+// Get specific named database
+const intelligentDb = await db.get('intelligent')
+const loggerDb = await db.get('unity-logger')
+const absenteeDb = await db.get('absentee')
+
+// Check if database is registered
+if (db.has('mdr')) {
+  const mdrDb = await db.get('mdr')
+}
+
+// Test all connections
+const healthResults = await db.testAllConnections()
+```
+
 ### Usage Examples
 
-#### Simple Query
+#### SQL Server Query (Legacy)
 ```typescript
 import { query } from '~/server/utils/database'
 
 const result = await query<User>('SELECT * FROM Users WHERE id = @id', { id: 1 })
 ```
 
-#### API Route with Error Handling
+#### MySQL Query (Positional Parameters)
+```typescript
+import { mysqlQuery } from '~/server/utils/mysqlDatabase'
+
+const result = await mysqlQuery<User>('SELECT * FROM users WHERE id = ?', [1])
+const users = result.rows
+```
+
+#### MySQL Query (Named Parameters)
+```typescript
+import { mysqlQueryNamed } from '~/server/utils/mysqlDatabase'
+
+const result = await mysqlQueryNamed<User>(
+  'SELECT * FROM users WHERE id = :id AND status = :status',
+  { id: 1, status: 'active' }
+)
+const users = result.rows
+```
+
+#### Using Multiple Named Databases in One Endpoint
 ```typescript
 import { eventHandler } from 'h3'
-import { query } from '~/server/utils/database'
+import { db } from '~/utils/databases'
 
 export default eventHandler(async (event) => {
   try {
-    const result = await query('SELECT * FROM Products')
-    return { success: true, data: result.recordset }
+    // Get multiple database connections
+    const intelligentDb = await db.get('intelligent')
+    const loggerDb = await db.get('unity-logger')
+    const absenteeDb = await db.get('absentee')
+
+    // Query each database
+    const clients = await intelligentDb.query('SELECT * FROM clients')
+    const logs = await loggerDb.query('SELECT * FROM logs WHERE date = @date', { date: new Date() })
+    const absences = await absenteeDb.query('SELECT * FROM absences WHERE status = ?', ['pending'])
+
+    return {
+      success: true,
+      data: {
+        clients: clients.rows,
+        logs: logs.rows,
+        absences: absences.rows
+      }
+    }
   } catch (error) {
     return { success: false, error: error.message }
   }
 })
+```
+
+#### API Route with Both Databases (Legacy)
+```typescript
+import { eventHandler } from 'h3'
+import { query } from '~/server/utils/database'
+import { mysqlQuery } from '~/server/utils/mysqlDatabase'
+
+export default eventHandler(async (event) => {
+  try {
+    // Get data from SQL Server
+    const sqlServerResult = await query('SELECT * FROM Products')
+
+    // Get data from MySQL
+    const mysqlResult = await mysqlQuery('SELECT * FROM inventory')
+
+    return {
+      success: true,
+      sqlServer: sqlServerResult.recordset,
+      mysql: mysqlResult.rows
+    }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+```
+
+#### MySQL Transactions
+```typescript
+import { getMySQLConnection } from '~/server/utils/mysqlDatabase'
+
+const connection = await getMySQLConnection()
+try {
+  await connection.beginTransaction()
+
+  await connection.execute('INSERT INTO orders ...', [values])
+  await connection.execute('UPDATE inventory ...', [values])
+
+  await connection.commit()
+} catch (error) {
+  await connection.rollback()
+  throw error
+} finally {
+  connection.release()
+}
 ```
 
 ### Database Types
@@ -109,9 +249,14 @@ Database models are defined in `server/types/database.ts` using consistent camel
 - All API responses use camelCase field names (e.g., `clientNumber`, `clientName`, `orderId`)
 - Database fields are automatically transformed from PascalCase to camelCase using the case mapping utility
 - The DatabaseResponse<T> wrapper provides a consistent API response format
+- MySQL results follow the same camelCase convention for API consistency
 
-### Health Check
-The `/api/health` endpoint verifies database connectivity and can be used for monitoring.
+### Health Check Endpoints
+- `/api/health` - Legacy SQL Server health check
+- `/api/mysql-health` - Legacy MySQL health check
+- `/api/health/all` - Aggregate health check for all databases
+- `/api/health/[database]` - Individual database health check
+  - Examples: `/api/health/intelligent`, `/api/health/unity-logger`, `/api/health/absentee`
 
 ### Version Information
 The `/api/version` endpoint provides application version and build information:
@@ -139,7 +284,7 @@ All API endpoints (except `/api/health` and `/api/version`) require authenticati
    ```
 
 ### Authentication Middleware (`server/middleware/auth.ts`)
-- **Automatic**: Applied to all `/api/*` routes except `/api/health` and `/api/version`
+- **Automatic**: Applied to all `/api/*` routes except `/api/health`, `/api/mysql-health`, and `/api/version`
 - **Header Required**: `X-API-Key` header must match configured `API_KEY`
 - **Error Handling**: Returns 401 Unauthorized for missing/invalid keys
 - **Logging**: Warns about invalid key attempts with IP address
@@ -177,7 +322,10 @@ fetch('/api/users', {
 ### Public Endpoints (No Authentication)
 
 #### `/api/health`
-Database connectivity and system health status.
+SQL Server connectivity and system health status.
+
+#### `/api/mysql-health`
+MySQL connectivity and health status.
 
 #### `/api/version`
 Application version and build information:

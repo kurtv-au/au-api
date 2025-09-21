@@ -3,8 +3,12 @@
  * Handles database lookups for dirListingFields to resolve field values
  */
 
-import { query } from './database'
+import { DatabaseManager } from './databases'
 import { transformRecordset } from './caseMapper'
+
+// Initialize database manager
+DatabaseManager.loadFromEnvironment()
+const db = DatabaseManager.getInstance()
 import type { DirListingField, FieldProcessingResult } from '../types/database'
 import { extractFields, replaceFields, getFieldIds, type ParsedField, type ParsingResult } from './htmlFieldParser'
 
@@ -83,8 +87,9 @@ async function batchGetFieldValues(
     })
     
     // Execute query and transform to camelCase
-    const result = await query(sqlQuery, params)
-    const transformedResults = transformRecordset<DirListingField>(result.recordset)
+    const intelligentDb = await db.get('default')
+    const result = await intelligentDb.query<DirListingField>(sqlQuery, params)
+    const transformedResults = transformRecordset<DirListingField>(result.rows)
     
     // Map results by fieldId (trim all field values)
     transformedResults.forEach(row => {
@@ -150,17 +155,18 @@ export async function getFieldUsageStats(cltId: number): Promise<{
 }> {
   try {
     // Get all fields for the client and transform to camelCase
-    const result = await query(`
+    const intelligentDb = await db.get('default')
+    const result = await intelligentDb.query<DirListingField>(`
       SELECT cltfieldID, Field, DataType, COUNT(*) as usage_count
-      FROM dbo.dirListingFields 
-      WHERE cltID = @cltId 
+      FROM dbo.dirListingFields
+      WHERE cltID = @cltId
         AND cltfieldID IS NOT NULL
         AND Field IS NOT NULL
       GROUP BY cltfieldID, Field, DataType
       ORDER BY usage_count DESC, Field
     `, { cltId })
-    
-    const fields = transformRecordset<DirListingField>(result.recordset)
+
+    const fields = transformRecordset<DirListingField>(result.rows)
     const fieldsByDataType: Record<number, number> = {}
     
     // Count fields by data type

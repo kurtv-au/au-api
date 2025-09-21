@@ -1,5 +1,9 @@
 import { eventHandler } from 'h3'
-import { getPool } from '../../utils/database'
+import { DatabaseManager } from '~/utils/databases'
+
+// Initialize database manager
+DatabaseManager.loadFromEnvironment()
+const db = DatabaseManager.getInstance()
 
 /**
  * GET /api/health
@@ -16,11 +20,11 @@ export default eventHandler(async (event) => {
   }
 
   try {
-    // Test database connection
-    const pool = await getPool()
-    const result = await pool.request().query('SELECT 1 as test')
-    
-    if (result.recordset[0]?.test === 1) {
+    // Test database connection using new database manager
+    const defaultDb = await db.get('default')
+    const result = await defaultDb.query<{test: number}>('SELECT 1 as test')
+
+    if (result.rows[0]?.test === 1) {
       health.database.connected = true
       health.database.message = 'Database connection successful'
     }
@@ -28,7 +32,7 @@ export default eventHandler(async (event) => {
     health.status = 'unhealthy'
     health.database.connected = false
     health.database.message = error.message || 'Database connection failed'
-    
+
     // Set unhealthy status code
     event.context.response = {
       statusCode: 503

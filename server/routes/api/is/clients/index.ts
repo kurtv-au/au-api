@@ -1,7 +1,11 @@
 import { eventHandler, getQuery } from 'h3'
-import { query } from '~/utils/database'
+import { DatabaseManager } from '~/utils/databases'
 import { transformRecordset } from '~/utils/caseMapper'
 import type { DatabaseResponse, ClientListItem } from '~/types/database'
+
+// Initialize database manager
+DatabaseManager.loadFromEnvironment()
+const db = DatabaseManager.getInstance()
 
 export default eventHandler(async (event) => {
   const params = getQuery(event)
@@ -46,8 +50,10 @@ export default eventHandler(async (event) => {
   sql += ' ORDER BY ClientName'
   
   try {
-    const result = await query<ClientListItem>(sql, queryParams)
-    const transformedData = transformRecordset(result.recordset)
+    // Get the default database connection (maps to existing database)
+    const intelligentDb = await db.get('default')
+    const result = await intelligentDb.query<ClientListItem>(sql, queryParams)
+    const transformedData = transformRecordset(result.rows)
     
     const response: DatabaseResponse<ClientListItem> = {
       success: true,

@@ -13,7 +13,9 @@ export default defineEventHandler(async (event) => {
   }
   
   // Skip authentication for monitoring endpoints
-  if (url.pathname === '/api/health' || url.pathname === '/api/version') {
+  if (url.pathname === '/api/health' ||
+      url.pathname.startsWith('/api/health/') ||
+      url.pathname === '/api/version') {
     return
   }
   
