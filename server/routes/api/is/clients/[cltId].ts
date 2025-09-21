@@ -1,7 +1,11 @@
 import { eventHandler, getRouterParam, createError } from 'h3'
-import { query } from '~/utils/database'
+import { DatabaseManager } from '~/utils/databases'
 import { transformRecordset } from '~/utils/caseMapper'
 import type { DatabaseResponse, ClientListItem } from '~/types/database'
+
+// Initialize database manager
+DatabaseManager.loadFromEnvironment()
+const db = DatabaseManager.getInstance()
 
 export default eventHandler(async (event) => {
   const cltId = getRouterParam(event, 'cltId')
@@ -34,8 +38,10 @@ export default eventHandler(async (event) => {
   `
   
   try {
-    const result = await query<ClientListItem>(sql, { cltId: cltIdNum })
-    const transformedData = transformRecordset(result.recordset)
+    // Get the default database connection (maps to existing database)
+    const intelligentDb = await db.get('default')
+    const result = await intelligentDb.query<ClientListItem>(sql, { cltId: cltIdNum })
+    const transformedData = transformRecordset(result.rows)
     
     if (transformedData.length === 0) {
       throw createError({

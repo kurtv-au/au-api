@@ -67,37 +67,131 @@ When building APIs:
 
 ## Database Integration
 
+### Multi-Database Architecture
+This API features a comprehensive multi-database architecture supporting multiple database types and named connections through a unified `DatabaseManager` interface.
+
+**Supported Database Systems:**
+- **MSSQL**: Microsoft SQL Server with tedious driver
+- **MySQL**: MySQL with mysql2 driver and connection pooling
+- **PostgreSQL**: PostgreSQL with pg driver (ready for future use)
+
+**Named Database Connections:**
+- `intelligent` (MSSQL) - Main system database
+- `unity-logger` (MSSQL) - Logging and event tracking (future)
+- `mdr` (MSSQL) - MDR system (future)
+- `absentee` (MySQL) - Absentee management (future)
+- `engage` (PostgreSQL) - Engagement system (future)
+- `default` (MSSQL) - Currently mapped to existing database
+
 ### Configuration
-Set up database connection via environment variables:
+Set up database connections via environment variables:
 ```bash
 cp .env.example .env
-# Edit .env with your SQL Server credentials
+# Edit .env with your database credentials
+
+# Primary Database (MSSQL)
+DB_SERVER=172.31.55.30
+DB_PORT=1433
+DB_DATABASE=Intelligent
+DB_USER=your_username
+DB_PASSWORD=your_password
+DB_ENCRYPT=false
+
+# Intelligent Database (uses existing database)
+DB_INTELLIGENT_DATABASE=Intelligent
+
+# Unity Logger Database (future)
+DB_LOGGER_SERVER=localhost
+DB_LOGGER_PORT=1433
+DB_LOGGER_DATABASE=logger
+DB_LOGGER_USER=your_username
+DB_LOGGER_PASSWORD=your_password
+
+# MySQL Configuration (future)
+MYSQL_ABSENTEE_HOST=localhost
+MYSQL_ABSENTEE_PORT=3306
+MYSQL_ABSENTEE_DATABASE=absentee
+MYSQL_ABSENTEE_USER=your_username
+MYSQL_ABSENTEE_PASSWORD=your_password
+
+# PostgreSQL Configuration (future)
+POSTGRES_ENGAGE_HOST=localhost
+POSTGRES_ENGAGE_PORT=5432
+POSTGRES_ENGAGE_DATABASE=engage
+POSTGRES_ENGAGE_USER=your_username
+POSTGRES_ENGAGE_PASSWORD=your_password
 ```
 
-### Database Utilities (`server/utils/database.ts`)
-- **getPool()**: Returns singleton connection pool
-- **query()**: Execute parameterized SQL queries
-- **execute()**: Execute stored procedures
-- **closePool()**: Clean up connections
+### Database Manager Usage (`server/utils/databases`)
+The database manager provides a unified interface for all database operations:
 
-### Usage Examples
-
-#### Simple Query
+#### Getting Database Connections
 ```typescript
-import { query } from '~/server/utils/database'
+import { DatabaseManager } from '~/utils/databases'
 
-const result = await query<User>('SELECT * FROM Users WHERE id = @id', { id: 1 })
+// Initialize database manager
+DatabaseManager.loadFromEnvironment()
+const db = DatabaseManager.getInstance()
+
+// Get specific named database
+const intelligentDb = await db.get('default')  // Current main database
+const loggerDb = await db.get('unity-logger')  // Future logging database
+const absenteeDb = await db.get('absentee')    // Future MySQL database
+
+// Check if database is registered
+if (db.has('mdr')) {
+  const mdrDb = await db.get('mdr')
+}
+
+// Test all connections
+const healthResults = await db.testAllConnections()
 ```
 
-#### API Route with Error Handling
+#### Unified Database Interface
+All database connections use the same interface regardless of database type:
+```typescript
+// Works with MSSQL, MySQL, and PostgreSQL
+const result = await database.query<User>('SELECT * FROM users WHERE id = @id', { id: 1 })
+const users = result.rows  // Always use .rows for results
+
+// Transaction support
+const transaction = await database.beginTransaction()
+try {
+  await transaction.query('INSERT INTO ...', params)
+  await transaction.query('UPDATE ...', params)
+  await transaction.commit()
+} catch (error) {
+  await transaction.rollback()
+  throw error
+}
+```
+
+#### Multi-Database Operations
 ```typescript
 import { eventHandler } from 'h3'
-import { query } from '~/server/utils/database'
+import { DatabaseManager } from '~/utils/databases'
+
+DatabaseManager.loadFromEnvironment()
+const db = DatabaseManager.getInstance()
 
 export default eventHandler(async (event) => {
   try {
-    const result = await query('SELECT * FROM Products')
-    return { success: true, data: result.recordset }
+    // Get multiple database connections
+    const intelligentDb = await db.get('default')
+
+    // Query main database
+    const clients = await intelligentDb.query('SELECT * FROM cltClients')
+
+    // Future: Query other databases when configured
+    if (db.has('unity-logger')) {
+      const loggerDb = await db.get('unity-logger')
+      const logs = await loggerDb.query('SELECT * FROM logs WHERE date = @date', { date: new Date() })
+    }
+
+    return {
+      success: true,
+      data: clients.rows
+    }
   } catch (error) {
     return { success: false, error: error.message }
   }
@@ -109,9 +203,27 @@ Database models are defined in `server/types/database.ts` using consistent camel
 - All API responses use camelCase field names (e.g., `clientNumber`, `clientName`, `orderId`)
 - Database fields are automatically transformed from PascalCase to camelCase using the case mapping utility
 - The DatabaseResponse<T> wrapper provides a consistent API response format
+- MySQL results follow the same camelCase convention for API consistency
 
-### Health Check
-The `/api/health` endpoint verifies database connectivity and can be used for monitoring.
+### Health Check Endpoints
+The API provides comprehensive health checking for all database connections:
+
+- `/api/health` - Primary database health check using new database manager
+- `/api/health/all` - Aggregate health check for all registered databases
+- `/api/health/[database]` - Individual database health check by name
+  - Examples: `/api/health/default`, `/api/health/unity-logger`, `/api/health/absentee`
+
+**Health Check Response Format**:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-09-21T16:30:09.417Z",
+  "database": {
+    "connected": true,
+    "message": "Database connection successful"
+  }
+}
+```
 
 ### Version Information
 The `/api/version` endpoint provides application version and build information:
@@ -139,7 +251,8 @@ All API endpoints (except `/api/health` and `/api/version`) require authenticati
    ```
 
 ### Authentication Middleware (`server/middleware/auth.ts`)
-- **Automatic**: Applied to all `/api/*` routes except `/api/health` and `/api/version`
+- **Automatic**: Applied to all `/api/*` routes except health endpoints and `/api/version`
+- **Excluded Endpoints**: `/api/health`, `/api/health/*`, `/api/version`
 - **Header Required**: `X-API-Key` header must match configured `API_KEY`
 - **Error Handling**: Returns 401 Unauthorized for missing/invalid keys
 - **Logging**: Warns about invalid key attempts with IP address
@@ -177,7 +290,13 @@ fetch('/api/users', {
 ### Public Endpoints (No Authentication)
 
 #### `/api/health`
-Database connectivity and system health status.
+Primary database connectivity and system health status using the new database manager.
+
+#### `/api/health/all`
+Comprehensive health check for all registered databases.
+
+#### `/api/health/[database]`
+Individual database health check by name (e.g., `/api/health/default`, `/api/health/unity-logger`).
 
 #### `/api/version`
 Application version and build information:
@@ -258,8 +377,10 @@ Parses and processes HTML content with field replacement:
 - Includes XSS protection through HTML encoding
 
 ### Field Resolution (`server/utils/fieldResolver.ts`)
-Resolves field values from database with performance optimization:
+Resolves field values from database with performance optimization using the new database manager:
 - **resolveClientFields()**: Process single client record
 - **resolveMultipleClientFields()**: Process multiple client records
-- **batchGetFieldValues()**: Batch database queries for performance
+- **batchGetFieldValues()**: Batch database queries for performance using unified database interface
+- **getFieldUsageStats()**: Analytics for field usage patterns
 - Trims all field values and handles missing fields gracefully
+- Uses the new `DatabaseManager` for consistent database access
